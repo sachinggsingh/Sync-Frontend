@@ -1,15 +1,17 @@
 import toast from 'react-hot-toast';
 
+import { io } from "socket.io-client";
+
 class SocketManager {
   constructor() {
     this.socket = null;
-    this.BACKEND_URL = import.meta.env.VITE_GO_BACKEND_URL || 'ws://localhost:8080/ws';
+    this.BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5555';
     this.isConnecting = false;
     this.listeners = new Map();
   }
 
   connect(authToken = null) {
-    if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
+    if (this.socket && this.socket.connected) {
       return this;
     }
 
@@ -20,88 +22,51 @@ class SocketManager {
     this.isConnecting = true;
 
     try {
-      console.log('Connecting to WebSocket:', this.BACKEND_URL);
-      this.socket = new WebSocket(this.BACKEND_URL);
+      console.log('Connecting to Socket.io:', this.BACKEND_URL);
+      this.socket = io(this.BACKEND_URL, {
+        auth: {
+          token: authToken
+        },
+        transports: ['websocket', 'polling']
+      });
 
-      this.socket.onopen = () => {
+      this.socket.on('connect', () => {
         console.log('Connected to socket server');
         this.isConnecting = false;
         this.emitEvent('connect');
-      };
+      });
 
-      this.socket.onclose = (event) => {
-        console.log('Disconnected:', event.reason);
+      this.socket.on('disconnect', (reason) => {
+        console.log('Disconnected:', reason);
         this.isConnecting = false;
-        this.emitEvent('disconnect', event.reason);
-        this.socket = null;
-      };
+        this.emitEvent('disconnect', reason);
+      });
 
-      this.socket.onerror = (error) => {
-        console.error('Socket error:', error);
+      this.socket.on('connect_error', (error) => {
+        console.error('Socket connection error:', error);
         this.isConnecting = false;
         this.emitEvent('connect_error', error);
-      };
+      });
 
-      this.socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          this.handleIncomingMessage(data);
-        } catch (err) {
-          console.error('Error parsing message:', err);
-        }
-      };
+      // Handle all incoming events generically if needed, 
+      // but Socket.io usually handles specific events.
+      // We will override the listener logic to use socket.on() directly.
 
       return this;
     } catch (error) {
-      console.error('Socket connection error:', error);
+      console.error('Socket initialization error:', error);
       this.isConnecting = false;
       return null;
     }
   }
 
-  handleIncomingMessage(data) {
-    console.log('[Socket] Received:', data);
-    const { type, payload, ...rest } = data;
-    // If type matches a listener, invoke it
-    // We treat the top-level keys as the data payload for compatibility with existing frontend logic
-    // or we might need to adjust.
-    // Existing frontend expects: on('code-change', ({ code, sender }) => ...)
-    // Go sends: { type: "code-change", sender: "...", payload: ... }
-    // If we put data in payload, we should extract it.
-    // If we put it at top level (like sender), it's available in `rest`.
-
-    if (this.listeners.has(type)) {
-      const handlers = this.listeners.get(type);
-
-      // Construct the object expected by frontend handlers
-      // Our Go server sends:
-      // Type, RoomID, UserID, Sender, Target, Payload (RawMessage)
-
-      // For 'code-change', we expect { code, sender }
-      // The Go server sends structure. We need to parse Payload if it exists, or use top level fields.
-      // Let's assume Payload contains the specific data like 'code', 'message' text, etc.
-      // OR, we can try to merge everything.
-
-      let eventData = { ...rest, sender: data.sender };
-      if (payload) {
-        // Payload is json.RawMessage, which comes as a sub-object in JSON
-        // We merge it into eventData
-        eventData = { ...eventData, ...payload };
-      }
-
-      handlers.forEach(callback => callback(eventData));
-    }
-  }
-
-  disconnect() {
-    if (this.socket) {
-      this.socket.close();
-      this.socket = null;
-    }
-  }
 
   // Event Listener Management
   on(event, callback) {
+    if (this.socket) {
+      this.socket.on(event, callback);
+    }
+    // Still keep track for re-registration if needed
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
@@ -109,6 +74,9 @@ class SocketManager {
   }
 
   off(event, callback) {
+    if (this.socket) {
+      this.socket.off(event, callback);
+    }
     if (!this.listeners.has(event)) {
       return;
     }
@@ -124,34 +92,11 @@ class SocketManager {
   }
 
   emit(event, data) {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    if (!this.socket || !this.socket.connected) {
       console.warn('Socket not connected, cannot emit:', event);
       return;
     }
-
-    // Wrap in standard signal message format
-    const message = {
-      type: event,
-      ...data
-    };
-
-    // For specific events, we might want to structure generic payload
-    // Go expects: Type, RoomID, UserID, Target, Payload
-    // Front end sends: { roomId, code, sender, username } for code-change
-    // We can map these to the Go structure.
-
-    // Mapping:
-    // data.roomId -> RoomID
-    // data.username -> UserID (or Sender?)
-
-    const formattedMessage = {
-      type: event,
-      roomId: data.roomId,
-      userId: data.username || data.sender, // Use username as userId
-      ...data
-    };
-
-    this.socket.send(JSON.stringify(formattedMessage));
+    this.socket.emit(event, data);
   }
 
   // Helper method for internal events
@@ -163,7 +108,17 @@ class SocketManager {
 
   // Compatibility methods for existing code
   removeAllListeners() {
+    if (this.socket) {
+      this.socket.removeAllListeners();
+    }
     this.listeners.clear();
+  }
+
+  disconnect() {
+    if (this.socket) {
+      this.socket.disconnect();
+      this.socket = null;
+    }
   }
 
   // Room events
@@ -176,8 +131,16 @@ class SocketManager {
   }
 
   // Code sync events
-  emitCodeChange(roomId, code, sender, username) {
-    this.emit('code-change', { roomId, code, sender, username });
+  syncCode(socketId, code) {
+    this.emit('sync-code', { socketId, code });
+  }
+
+  onCodeSync(callback) {
+    this.on('code-sync', callback);
+  }
+
+  emitCodeChange(roomId, code, sender) {
+    this.emit('code-change', { roomId, code, sender });
   }
 
   onCodeChange(callback) {
@@ -210,17 +173,13 @@ class SocketManager {
   }
 
   onMessage(callback) {
-    this.on('receive-message', callback); // Go broadcasts 'receive-message'?? 
-    // Wait, in Go I implemented "send-message" handler to broadcast "send-message".
-    // Frontend expects "receive-message".
-    // I should probably update Go to broadcast "receive-message" OR update frontend to listen to "send-message".
-    // Let's update frontend to listen to "send-message" as it's cleaner echo, OR map it here.
-    // Go code: broadcasts whatever Type came in. So if I emit "send-message", Go broadcasts "send-message".
-    // Frontend `JoinRoom.jsx` listens to `socketManager.onMessage` which calls `on('receive-message')`.
-    // So I should map it here or change event name.
+    // Backend emits 'receive-message'
+    this.on('receive-message', callback);
+  }
 
-    // Let's alias receive-message to send-message for compatibility if server echoes same type
-    this.on('send-message', callback);
+  // Error events
+  onError(callback) {
+    this.on('error', callback);
   }
 
   // Code output events

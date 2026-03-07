@@ -47,13 +47,15 @@ const JoinRoom = () => {
 
   // Socket event handlers
   const handleUserJoined = useCallback(
-    ({ clients, username: joinedUsername }) => {
+    ({ clients, username: joinedUsername, socketId }) => {
       setUsers(clients);
       if (joinedUsername !== username) {
         toast.success(`${joinedUsername} joined the room`);
+        // Sync our current code to the new joiner
+        socketManager.syncCode(socketId, code);
       }
     },
-    [username]
+    [username, code]
   );
 
   const handleUserLeft = useCallback(({ socketId, username }) => {
@@ -64,6 +66,10 @@ const JoinRoom = () => {
   const handleUserDisconnected = useCallback(({ socketId, username }) => {
     setUsers((prev) => prev.filter((user) => user.socketId !== socketId));
     toast.error(`${username} disconnected`);
+  }, []);
+
+  const handleCodeSync = useCallback(({ code: syncedCode }) => {
+    setCode(syncedCode);
   }, []);
 
   const handleCodeChange = useCallback(
@@ -89,6 +95,7 @@ const JoinRoom = () => {
     handleUserJoined,
     handleUserLeft,
     handleUserDisconnected,
+    handleCodeSync,
     handleCodeChange
   });
 
@@ -98,9 +105,10 @@ const JoinRoom = () => {
       handleUserJoined,
       handleUserLeft,
       handleUserDisconnected,
+      handleCodeSync,
       handleCodeChange
     };
-  }, [handleUserJoined, handleUserLeft, handleUserDisconnected, handleCodeChange]);
+  }, [handleUserJoined, handleUserLeft, handleUserDisconnected, handleCodeSync, handleCodeChange]);
 
   // Get Clerk session token
   useEffect(() => {
@@ -190,7 +198,11 @@ const JoinRoom = () => {
     socketManager.onUserJoined((data) => handlersRef.current.handleUserJoined(data));
     socketManager.onUserLeft((data) => handlersRef.current.handleUserLeft(data));
     socketManager.onUserDisconnected((data) => handlersRef.current.handleUserDisconnected(data));
+    socketManager.onCodeSync((data) => handlersRef.current.handleCodeSync(data));
     socketManager.onCodeChange((data) => handlersRef.current.handleCodeChange(data));
+    socketManager.onError((data) => {
+      toast.error(data.message || "An error occurred");
+    });
 
     // Handle messages
     socketManager.onMessage((messageData) => {
