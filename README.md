@@ -23,7 +23,7 @@ The frontend engine of SyncEditor, built with React, Vite, and Monaco Editor. Ex
 
 | 🎯 Core Experience | 🎨 Next-Gen UI | 🛠️ Pro Tools |
 | :--- | :--- | :--- |
-| **Real-Time Pairing**<br>Instant character-by-character sync. | **User Presence**<br>Color-coded cursors and avatars. | **Multi-Language**<br>JS, TS, Python, C++, and more. |
+| **Real-Time Pairing**<br>Instant character-by-character sync. | **User Presence**<br>Color-coded cursors and avatars based on supplied name. | **Multi-Language**<br>JS, TS, Python, C++, and more. |
 | **Cloud Execution**<br>Run code directly in-browser. | **Responsive Layout**<br>Flawless on any device. | **Monaco Engine**<br>The power of VS Code in your web browser. |
 | **Secure Rooms**<br>Isolated, ID-based coding sessions. | **Dark Mode**<br>Premium aesthetics for long sessions. | **Live Chat**<br>Contextual communication while you code. |
 
@@ -31,10 +31,12 @@ The frontend engine of SyncEditor, built with React, Vite, and Monaco Editor. Ex
 
 ## 🚀 Quick Start
 
+*This simplified version does not require user authentication.*  To join a room users simply enter a name and a room ID (or generate a new one).  All validation happens on the client; the backend accepts any username and only checks that a non‑empty room ID is supplied.*
+
 ### Prerequisites
 - **Node.js** (v18 or higher)
 - **npm** or **yarn**
-- **SyncEditor Server**: This project requires the [SyncEditor Backend](https://github.com/sachinggsingh/Sync-Backend) to be running.
+- **SyncEditor Server**: run the backend locally (see Server README).
 
 ### 1-Minute Setup
 

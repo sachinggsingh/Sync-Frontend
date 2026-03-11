@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useUser, useAuth } from "@clerk/clerk-react";
 import toast from "react-hot-toast";
 
 import socketManager from "../socket";
@@ -17,9 +16,14 @@ const DEBOUNCE_DELAY = 100;
 const JoinRoom = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isLoaded } = useUser();
-  const { getToken } = useAuth();
   const { roomId, username } = location.state || {};
+
+  // if someone navigated here manually or the state was lost, bounce to home
+  useEffect(() => {
+    if (!roomId || !username) {
+      navigate('/');
+    }
+  }, [roomId, username, navigate]);
 
   const editorContainerRef = useRef(null);
   const debounceTimerRef = useRef(null);
@@ -36,12 +40,12 @@ const JoinRoom = () => {
   const [users, setUsers] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [message, setMessage] = useState([]);
-  const [authToken, setAuthToken] = useState(null);
+  // no auth token needed in simplified version
 
   // Video Call State
   const [isCallActive, setIsCallActive] = useState(false);
   const [localStream, setLocalStream] = useState(null);
-  const [remoteStreams, setRemoteStreams] = useState([]);
+  const [remoteStreams, _setRemoteStreams] = useState([]); // setter unused for now
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(false);
 
@@ -110,139 +114,97 @@ const JoinRoom = () => {
     };
   }, [handleUserJoined, handleUserLeft, handleUserDisconnected, handleCodeSync, handleCodeChange]);
 
-  // Get Clerk session token
-  useEffect(() => {
-    const fetchToken = async () => {
-      console.log('Token Effect Triggered. User:', user?.id, 'IsLoaded:', isLoaded);
-      if (isLoaded && user) {
-        try {
-          console.log('Fetching Clerk token...');
-          const token = await getToken();
-          console.log('Clerk token received:', token ? `Token length: ${token.length}` : 'No token (null/undefined)');
-          
-          if (token) {
-            setAuthToken(token);
-          } else {
-            console.error('Failed to retrieve token from Clerk');
-            toast.error('Failed to authenticate with server');
-          }
-        } catch (error) {
-          console.error('Error getting Clerk token:', error);
-          toast.error('Authentication error: ' + error.message);
-        }
-      } else {
-        console.log('Skipping token fetch: User not loaded or not present');
-      }
-    };
-    fetchToken();
-  }, [user, isLoaded, getToken]);
 
-  // Initialize socket connection
+  // manage the socket connection itself
   useEffect(() => {
-    if (!roomId || !username || !authToken) {
-      if (!authToken && user) {
-        console.log('Waiting for auth token...');
-        // Still waiting for token
-        return;
-      }
-      if (!roomId || !username) {
-        navigate("/");
-        return;
-      }
+    if (!roomId || !username) {
+      navigate('/');
+      return;
     }
 
     let isInitialConnection = true;
 
-    console.log('Connecting to socket with token...');
-    // Connect to socket with auth token
-    const socket = socketManager.connect(authToken);
-
-    if (!socket) {
-      toast.error("Failed to connect to server");
-      navigate("/");
-      return;
-    }
-
-    // Add connection event listeners
-    socket.on('connect', () => {
-      if (!isInitialConnection) {
-        toast.success("Reconnected to server");
-        // Rejoin the room on reconnection to ensure server has user state
-        console.log('Rejoining room after reconnection...');
-        socketManager.joinRoom(roomId, username);
-      } else {
-        isInitialConnection = false;
-      }
-      setIsConnected(true);
-    });
-
-    socket.on('disconnect', (reason) => {
-      // For native WebSocket, reason might be empty or different.
-      // We assume if it's disconnected unexpectedly, we show error.
-      // But if we navigate away, we disconnect manually. 
-      // The manual disconnect in cleanup ignores this because listeners are removed BEFORE disconnect() is called in cleanup function?
-      // No, in cleanup: socketManager.leaveRoom, removeAllListeners, disconnect.
-      // So removeAllListeners() is called first. We shouldn't receive this event on manual cleanup.
-      
-      console.log('Disconnected. Reason:', reason);
-      setIsConnected(false);
-      // Optional: Toast if unexpectedly disconnected
-      // toast.error("Disconnected from server"); 
-    });
-
-    socket.on('connect_error', () => {
-      toast.error("Connection error. Retrying...");
-    });
-
-    // Setup event listeners using refs
-    socketManager.onUserJoined((data) => handlersRef.current.handleUserJoined(data));
-    socketManager.onUserLeft((data) => handlersRef.current.handleUserLeft(data));
-    socketManager.onUserDisconnected((data) => handlersRef.current.handleUserDisconnected(data));
-    socketManager.onCodeSync((data) => handlersRef.current.handleCodeSync(data));
-    socketManager.onCodeChange((data) => handlersRef.current.handleCodeChange(data));
-    socketManager.onError((data) => {
-      toast.error(data.message || "An error occurred");
-    });
-
-    // Handle messages
-    socketManager.onMessage((messageData) => {
-      setMessage((prev) => {
-        // Check if message already exists to prevent duplicates
-        const messageExists = prev.some(
-          (msg) =>
-            msg.sender === messageData.sender &&
-            msg.message === messageData.message &&
-            msg.time === messageData.time
-        );
-
-        if (!messageExists) {
-          return [...prev, messageData];
+    const setupSocket = async () => {
+      try {
+        console.log('connecting to socket');
+        // make sure we don't have an old connection still in progress
+        socketManager.disconnect();
+        const socket = socketManager.connect();
+        if (!socket) {
+          console.log('connect() returned null, another connect is pending');
+          return;
         }
-        return prev;
-      });
-    });
 
-    // Handle code output sync
-    socketManager.onCodeOutput(({ output, sender }) => {
-      setOutput(output);
-      if (sender !== username) {
-        toast.success(`${sender} executed code`);
+        socket.on('connect', () => {
+          if (!isInitialConnection) {
+            toast.success('Reconnected to server');
+            socketManager.joinRoom(roomId, username);
+          } else {
+            isInitialConnection = false;
+          }
+          setIsConnected(true);
+        });
+
+        socket.on('disconnect', (reason) => {
+          console.log('Disconnected. Reason:', reason);
+          setIsConnected(false);
+        });
+
+socket.on('connect_error', (err) => {
+          const msg = err && err.message ? err.message : '';
+          console.error('connect_error', msg);
+          toast.error('Connection error. Retrying...');
+        });
+
+        // event listeners
+        socketManager.onUserJoined((data) => handlersRef.current.handleUserJoined(data));
+        socketManager.onUserLeft((data) => handlersRef.current.handleUserLeft(data));
+        socketManager.onUserDisconnected((data) => handlersRef.current.handleUserDisconnected(data));
+        socketManager.onCodeSync((data) => handlersRef.current.handleCodeSync(data));
+        socketManager.onCodeChange((data) => handlersRef.current.handleCodeChange(data));
+        socketManager.onError((data) => {
+          toast.error(data.message || 'An error occurred');
+        });
+
+        socketManager.onMessage((messageData) => {
+          setMessage((prev) => {
+            const exists = prev.some(
+              (msg) =>
+                msg.sender === messageData.sender &&
+                msg.message === messageData.message &&
+                msg.time === messageData.time
+            );
+            return exists ? prev : [...prev, messageData];
+          });
+        });
+
+        socketManager.onCodeOutput(({ output, sender }) => {
+          setOutput(output);
+          if (sender !== username) {
+            toast.success(`${sender} executed code`);
+          }
+        });
+
+
+        socketManager.joinRoom(roomId, username);
+      } catch (error) {
+        console.error('auth error before connect', error);
+        toast.error('Authentication error: please sign in again');
+        navigate('/sign-in');
       }
-    });
+    };
 
-    // Join room
-    socketManager.joinRoom(roomId, username);
+    setupSocket();
 
-    // Cleanup
     return () => {
       socketManager.leaveRoom(roomId, username);
       socketManager.removeAllListeners();
       socketManager.disconnect();
       setIsConnected(false);
       setUsers([]);
-      setMessage([]); // Clear messages on disconnect
+      setMessage([]);
     };
-  }, [roomId, username, navigate, authToken, user]);
+  }, [roomId, username, navigate]);
 
   const handleMessage = (content) => {
     if (isConnected && roomId) {
@@ -279,7 +241,8 @@ const JoinRoom = () => {
       // Debounce the emission of changes
       debounceTimerRef.current = setTimeout(() => {
         if (isConnected && roomId) {
-          socketManager.emitCodeChange(roomId, value, username, username);
+          // emitCodeChange takes roomId, code, sender
+          socketManager.emitCodeChange(roomId, value, username);
         }
       }, DEBOUNCE_DELAY);
     },

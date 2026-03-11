@@ -1,4 +1,4 @@
-import toast from 'react-hot-toast';
+// import toast from 'react-hot-toast';
 
 import { io } from "socket.io-client";
 
@@ -10,7 +10,7 @@ class SocketManager {
     this.listeners = new Map();
   }
 
-  connect(authToken = null) {
+  connect() {
     if (this.socket && this.socket.connected) {
       return this;
     }
@@ -24,9 +24,6 @@ class SocketManager {
     try {
       console.log('Connecting to Socket.io:', this.BACKEND_URL);
       this.socket = io(this.BACKEND_URL, {
-        auth: {
-          token: authToken
-        },
         transports: ['websocket', 'polling']
       });
 
@@ -119,6 +116,8 @@ class SocketManager {
       this.socket.disconnect();
       this.socket = null;
     }
+    // if we were trying to connect, give up
+    this.isConnecting = false;
   }
 
   // Room events
@@ -145,6 +144,13 @@ class SocketManager {
 
   onCodeChange(callback) {
     this.on('code-change', callback);
+  }
+
+  // Authentication errors pushed from the server when handshake token is
+  // missing/expired.  Components can use this to prompt for re-login or
+  // refresh the token.
+  onAuthError(callback) {
+    this.on('auth-error', callback);
   }
 
   // User events

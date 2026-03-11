@@ -1,24 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState,  } from "react";
 import { Users, PlusCircle } from "lucide-react";
 import { v4 as uuid } from "uuid";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
-import { useUser, UserButton } from "@clerk/clerk-react";
 
 function HomePage() {
   const navigate = useNavigate();
-  const { user } = useUser();
+  // no authentication; username entered manually
   const [roomId, setRoomId] = useState("");
   const [username, setUsername] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Pre-fill username from Clerk user data
-  useEffect(() => {
-    if (user) {
-      const displayName = user.fullName || user.username || user.firstName || "";
-      setUsername(displayName);
-    }
-  }, [user]);
+  // optionally, could persist username locally in future
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -75,13 +68,6 @@ function HomePage() {
                   Connect with others in real-time
                 </p>
               </div>
-              <UserButton
-                appearance={{
-                  elements: {
-                    avatarBox: "w-10 h-10",
-                  },
-                }}
-              />
             </div>
           </div>
 
