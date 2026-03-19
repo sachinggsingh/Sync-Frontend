@@ -15,6 +15,12 @@ The frontend engine of SyncEditor, built with React, Vite, and Monaco Editor. Ex
 
 [Features](#-key-features) • [Deployment](#-deployment) • [Setup](#-quick-start) • [Backend Service](https://github.com/sachinggsingh/Sync-Backend)
 
+<div align="center">
+  <br>
+  <img src="../Server/assets/Screenshot 2026-03-14 at 3.06.44 PM.png" alt="System Architecture" width="900" />
+  <br><i>High-level system architecture and data flow.</i>
+</div>
+
 </div>
 
 ---
@@ -74,6 +80,21 @@ The app will be live at `http://localhost:5173` 🚀
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/) for a sleek, responsive look.
 - **Editor Core**: [Monaco Editor](https://microsoft.github.io/monaco-editor/) (the engine behind VS Code).
 - **Icons**: [Lucide React](https://lucide.dev/) for consistent, beautiful iconography.
+
+---
+
+## 📊 Monitoring & Observability
+
+SyncEditor is built with production-grade observability in mind. While the frontend provides the user interface, the system is backed by a robust monitoring stack:
+
+- **Distributed Tracing**: Visualize user interactions and socket events across the system with **Jaeger**.
+- **Log Aggregation**: Real-time log monitoring and analysis via **Grafana Loki**.
+- **Performance Insights**: Deep-dive into system latency and event processing.
+
+<div align="center">
+  <img src="../Server/assets/Screenshot 2026-03-19 at 4.32.48 PM.png" alt="Monitoring Dashboard" width="900" />
+  <br><i>Integrated logging and monitoring dashboard.</i>
+</div>
 
 ---
 
